@@ -2,6 +2,8 @@
 
 'use strict'
 
+// code version - vs - database migration status
+
 var DATABASE_URL = process.env.DATABASE_URL
 
 var mz = require('mz')
@@ -9,6 +11,17 @@ var co = require('co')
 var pgp = require('pg-promise')()
 var PG = pgp(DATABASE_URL)
 
+var config = {
+	schema: 'public',
+	table: 'pgmutate_migrations',
+	namespace: '__default__',
+	code_dir: '',
+	db_url: process.env.DATABASE_URL
+}
+
+/**
+ * Load the migrations
+ */
 co(function* () {
 
 }).then(done => pgp.end(), error => console.error(error.stack))
