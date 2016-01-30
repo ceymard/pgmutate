@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+
+'use strict'
+
+var DATABASE_URL = process.env.DATABASE_URL
+
+var mz = require('mz')
+var co = require('co')
+var pgp = require('pg-promise')()
+var PG = pgp(DATABASE_URL)
+
+co(function* () {
+
+}).then(done => pgp.end(), error => console.error(error.stack))
+
+`CREATE IF NOT EXISTS SCHEMA pgmutate;
+
+CREATE TABLE IF NOT EXISTS pgmutate.migrations(
+	module TEXT,
+	name TEXT,
+	up_migration TEXT,
+	down_migration TEXT,
+	ghost BOOLEAN,
+	date_applied TIMESTAMP
+)
+
+COMMENT ON COLUMN pgmutate.migrations.up_migration IS 'The migration that was run to get to this state';
+COMMENT ON COLUMN pgmutate.migrations.down_migration IS 'The migration that has to be executed to go downwards';
+`
