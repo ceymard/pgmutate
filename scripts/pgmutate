@@ -24,19 +24,78 @@ var config = {
  */
 co(function* () {
 
+	// when calling without a specific command, it will be assumed that we
+	// execute `migrate`.
+	// 
+	// !!! there should be a command to force the upload of a schema migration
+	// for which the hash changed : most likely the down procedure did not work
+	// 
+	// !!! there should be a require('migration-name') to ensure that modules
+	// are applied in correct order. Without a require, it is assumed that the
+	// previous file in alphanumerical order for the same module is its parent.
+	// 
+	// Here is what a standard 'migrate' does :
+	// 
+	// 1. scan all files to get the migrations
+	// 		1.a. maybe parse the .sql files and try to identify if every
+	// 			'create whatever' is matched with its corresponding 'drop whatever'
+	// 		1.b. compute the file hash (this will be needed later)
+	// 	
+	// 	2. Apply schema changes
+	// 	3. Apply code changes
+	// 		
+	// 	FOR SCHEMA CHANGES
+	// 		
+	// 1. interrogate the database to know which migrations are already applied
+	// 		1.a. maybe compute the hashes of the local files and compare them
+	// 			against the hash of what was saved in the database.
+	// 		1.b. emit warnings if there are differences between local schema
+	// 			change files and remote ones (maybe offer to replace the
+	// 			remote file with the local one if, say, the down procedure has
+	// 			been updated to better erase the up ones)
+	// 			
+	//	2. on the projects for which remote is behind local, execute the files
+	//		with the 'up' parameter set to true. A new record describing the migration
+	//		is created in the database (the file is also stored there verbatim)
+	//	
+	//	3. on the projects for which remote is ahead of local, execute the previously
+	//		stored file from the database with the 'down' parameter set to true.
+	//		
+	//	FOR CODE CHANGES
+	//	
+	//	1. search for all files for which the hash changed, and run their respective
+	//	'down' before re-running the new version.
+	//	
+	//	Code files should be able to `require` specific migrations as well, to allow
+	//	developpers to ensure that the schema is at the right version for them.
+
 }).then(done => pgp.end(), error => console.error(error.stack))
 
-`CREATE IF NOT EXISTS SCHEMA pgmutate;
+`
+CREATE IF NOT EXISTS SCHEMA pgmutate;
 
-CREATE TABLE IF NOT EXISTS pgmutate.migrations(
-	module TEXT,
-	name TEXT,
-	up_migration TEXT,
-	down_migration TEXT,
-	ghost BOOLEAN,
-	date_applied TIMESTAMP
-)
+IF down THEN
 
-COMMENT ON COLUMN pgmutate.migrations.up_migration IS 'The migration that was run to get to this state';
-COMMENT ON COLUMN pgmutate.migrations.down_migration IS 'The migration that has to be executed to go downwards';
+	DROP TABLE pgmutate.migrations CASCADE
+
+ELSE IF up THEN
+
+	/**
+	 * Holds all of our migrations.
+	 */
+	CREATE TABLE IF NOT EXISTS pgmutate.migrations(
+		timestamp TIMESTAMP,
+		hash TEXT,
+		module TEXT,
+		name TEXT,
+		up_migration TEXT,
+		down_migration TEXT,
+		ghost BOOLEAN,
+		date_applied TIMESTAMP
+	)
+
+	COMMENT ON COLUMN pgmutate.migrations.up_migration IS 'The migration that was run to get to this state';
+	COMMENT ON COLUMN pgmutate.migrations.down_migration IS 'The migration that has to be executed to go downwards';
+
+END
 `

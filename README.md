@@ -1,7 +1,27 @@
 
+WHAT
+====
+
+* Write your migrations in SQL
+* Go up or down the migration history without needing down migration files as
+  the 'down' is stored in the database
+* Separate your migrations logically in modules
+* Write your database code outside of tedious migrations, but still track it
 
 WHY
 ===
+
+While ORMs focus in allowing you to migrate from a database to another without hassle,
+they do so assuming that all the logic that handle data is in a separate server (and in
+a separate language.)
+
+The axiom of this util is different : PostgreSQL is the target, not the server language.
+As such, it will not try to provide generic ways of describing your changes in JSON.
+Describe them in SQL.
+
+=> We want to group data and its logic in the same system, and postgres allows us to do so
+thanks to PL such as C, plv8 and others, as well as incredible extensions (pgsql-http springs
+to mind)
 
 PGMutate addresses the following use-case :
 
@@ -21,8 +41,12 @@ Problèmes ;
 
 	- Le code en développement peut beaucoup évoluer ; impossible d'en faire une migration propre.
 		Il doit donc pouvoir être réintroduit périodiquement.
+
+    * !! éviter que le bugfix se fasse en direct sur la db et se perde parce qu'on a oublié qu'on l'a fait
+    * généralement le code évolue beaucoup pour une même structure de base de données
+
 	- Le schéma peut être en déphasage avec le code à cause de dépendences implicites (comment gérer ce cas ?)
-		-> les drops devraient probablement devoir être cascade
+		-> les drops devraient probablement devoir être cascadés
 
 HOW
 ===
