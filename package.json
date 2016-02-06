@@ -4,8 +4,12 @@
   "repository": "https://github.com/ceymard/pgmutate",
   "description": "A migration utility for PostgreSQL designed for schema and code changes inside your database.",
   "license": "MIT",
+  "bin": {
+    "pgmutate": "./scripts/pgmutate"
+  },
   "dependencies": {
     "co": "^4.6.0",
+    "colors": "^1.1.2",
     "mz": "^2.3.0",
     "pg-promise": "^3.1.2"
   }

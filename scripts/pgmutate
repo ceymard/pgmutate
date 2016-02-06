@@ -8,9 +8,107 @@ var DATABASE_URL = process.env.DATABASE_URL
 
 var mz = require('mz')
 var co = require('co')
-var pgp = require('pg-promise')()
-var PG = pgp(DATABASE_URL)
+var L = require('../src/log')
+// var pgp = require('pg-promise')()
+// var PG = pgp(DATABASE_URL)
 
+/**
+ * Bootstraps the database, creating the required tables if need be.
+ * It is pretty much run all the time.
+ */
+var bootstrap = co.wrap(function* bootstrap () {
+
+	let tbl = `"${cfg.schema}"."${cfg.table}"`
+
+	var create_sql = `
+		create table if not exists ${tbl} (
+			timestamp Timestamp,
+			module Text,
+			name Text,
+			migration Text,
+			hash Text,
+			ghost Boolean default false,
+			date_applied Timestamp default now()
+		);
+
+		create unique index if not exists pgmutate_migration_name
+			on ${tbl}(timestamp, module, name, migration) using btree;
+
+		create index if not exists pgmutate_date_applied
+			on ${tbl}(date_applied) using btree;
+
+		comment on column ${tbl}.timestamp
+			is 'the timestamp part of the migration file name';
+
+		comment on column ${tbl}.hash
+			is 'hash of the file to check for differences';
+
+		comment on column ${tbl}.module
+			is 'The fully qualified name of the module';
+
+		comment on column ${tbl}.migration
+			is 'The contents of the migration file';
+
+		comment on column ${tbl}.ghost
+			is 'True if the migration was put in database but not applied';
+
+		comment on column ${tbl}.date_applied
+			is 'Timestamp of when the migration was applied to the database';
+
+	`
+
+})
+
+
+/**
+ * [*run_migration description]
+ * @param {String} body	The body of the migration
+ * @param {boolean} up  Whether 
+ */
+var run_migration = co.wrap(function* run_migration(body, up) {
+
+	let _up = 'true'
+	let _down = 'false'
+
+	if (!up) {
+		_up = 'false'
+		_down = 'true'
+	}
+
+	body = ` DO $$
+		DECLARE up boolean := ${_up};
+		DECLARE down boolean := ${_down};
+	BEGIN
+		${body}
+	END $$;`
+
+})
+
+
+var create_migration = co.wrap(function* create_migration() {
+	var body = `
+		if down then
+			/**
+			 * write the down migration first.
+			 */
+
+		else
+			/**
+			 * Write the up migration here (create, ...)
+			 */
+
+		end if;
+	`
+})
+
+// Migrations are found
+// in /migrations/
+// in node_modules/.../migrations
+// the final name of the migration is <package_name>/<...subdirs>/<migration_name>
+
+// We want to know :
+// 		in which schema to save the migration table
+// 		what to call the migration table
 var config = {
 	schema: 'public',
 	table: 'pgmutate_migrations',
@@ -71,31 +169,31 @@ co(function* () {
 
 }).then(done => pgp.end(), error => console.error(error.stack))
 
-`
-CREATE IF NOT EXISTS SCHEMA pgmutate;
+// `
+// CREATE IF NOT EXISTS SCHEMA pgmutate;
 
-IF down THEN
+// IF down THEN
 
-	DROP TABLE pgmutate.migrations CASCADE
+// 	DROP TABLE pgmutate.migrations CASCADE
 
-ELSE IF up THEN
+// ELSE IF up THEN
 
-	/**
-	 * Holds all of our migrations.
-	 */
-	CREATE TABLE IF NOT EXISTS pgmutate.migrations(
-		timestamp TIMESTAMP,
-		hash TEXT,
-		module TEXT,
-		name TEXT,
-		up_migration TEXT,
-		down_migration TEXT,
-		ghost BOOLEAN,
-		date_applied TIMESTAMP
-	)
+// 	/**
+// 	 * Holds all of our migrations.
+// 	 */
+// 	CREATE TABLE IF NOT EXISTS pgmutate.migrations(
+// 		timestamp TIMESTAMP,
+// 		hash TEXT,
+// 		module TEXT,
+// 		name TEXT,
+// 		up_migration TEXT,
+// 		down_migration TEXT,
+// 		ghost BOOLEAN,
+// 		date_applied TIMESTAMP
+// 	)
 
-	COMMENT ON COLUMN pgmutate.migrations.up_migration IS 'The migration that was run to get to this state';
-	COMMENT ON COLUMN pgmutate.migrations.down_migration IS 'The migration that has to be executed to go downwards';
+// 	COMMENT ON COLUMN pgmutate.migrations.up_migration IS 'The migration that was run to get to this state';
+// 	COMMENT ON COLUMN pgmutate.migrations.down_migration IS 'The migration that has to be executed to go downwards';
 
-END
-`
+// END
+// `
