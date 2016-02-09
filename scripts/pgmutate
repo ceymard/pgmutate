@@ -9,61 +9,15 @@ var DATABASE_URL = process.env.DATABASE_URL
 var mz = require('mz')
 var co = require('co')
 var L = require('../src/log')
+var Mutator = require('../src/mutator')
 // var pgp = require('pg-promise')()
 // var PG = pgp(DATABASE_URL)
-
-/**
- * Bootstraps the database, creating the required tables if need be.
- * It is pretty much run all the time.
- */
-var bootstrap = co.wrap(function* bootstrap () {
-
-	let tbl = `"${cfg.schema}"."${cfg.table}"`
-
-	var create_sql = `
-		create table if not exists ${tbl} (
-			timestamp Timestamp,
-			module Text,
-			name Text,
-			migration Text,
-			hash Text,
-			ghost Boolean default false,
-			date_applied Timestamp default now()
-		);
-
-		create unique index if not exists pgmutate_migration_name
-			on ${tbl}(timestamp, module, name, migration) using btree;
-
-		create index if not exists pgmutate_date_applied
-			on ${tbl}(date_applied) using btree;
-
-		comment on column ${tbl}.timestamp
-			is 'the timestamp part of the migration file name';
-
-		comment on column ${tbl}.hash
-			is 'hash of the file to check for differences';
-
-		comment on column ${tbl}.module
-			is 'The fully qualified name of the module';
-
-		comment on column ${tbl}.migration
-			is 'The contents of the migration file';
-
-		comment on column ${tbl}.ghost
-			is 'True if the migration was put in database but not applied';
-
-		comment on column ${tbl}.date_applied
-			is 'Timestamp of when the migration was applied to the database';
-
-	`
-
-})
 
 
 /**
  * [*run_migration description]
  * @param {String} body	The body of the migration
- * @param {boolean} up  Whether 
+ * @param {boolean} up  Whether
  */
 var run_migration = co.wrap(function* run_migration(body, up) {
 
@@ -122,28 +76,31 @@ var config = {
  */
 co(function* () {
 
+	var m = new Mutator()
+	yield m.getMutations()
+
 	// when calling without a specific command, it will be assumed that we
 	// execute `migrate`.
-	// 
+	//
 	// !!! there should be a command to force the upload of a schema migration
 	// for which the hash changed : most likely the down procedure did not work
-	// 
+	//
 	// !!! there should be a require('migration-name') to ensure that modules
 	// are applied in correct order. Without a require, it is assumed that the
 	// previous file in alphanumerical order for the same module is its parent.
-	// 
+	//
 	// Here is what a standard 'migrate' does :
-	// 
+	//
 	// 1. scan all files to get the migrations
 	// 		1.a. maybe parse the .sql files and try to identify if every
 	// 			'create whatever' is matched with its corresponding 'drop whatever'
 	// 		1.b. compute the file hash (this will be needed later)
-	// 	
+	//
 	// 	2. Apply schema changes
 	// 	3. Apply code changes
-	// 		
+	//
 	// 	FOR SCHEMA CHANGES
-	// 		
+	//
 	// 1. interrogate the database to know which migrations are already applied
 	// 		1.a. maybe compute the hashes of the local files and compare them
 	// 			against the hash of what was saved in the database.
@@ -151,19 +108,19 @@ co(function* () {
 	// 			change files and remote ones (maybe offer to replace the
 	// 			remote file with the local one if, say, the down procedure has
 	// 			been updated to better erase the up ones)
-	// 			
+	//
 	//	2. on the projects for which remote is behind local, execute the files
 	//		with the 'up' parameter set to true. A new record describing the migration
 	//		is created in the database (the file is also stored there verbatim)
-	//	
+	//
 	//	3. on the projects for which remote is ahead of local, execute the previously
 	//		stored file from the database with the 'down' parameter set to true.
-	//		
+	//
 	//	FOR CODE CHANGES
-	//	
+	//
 	//	1. search for all files for which the hash changed, and run their respective
 	//	'down' before re-running the new version.
-	//	
+	//
 	//	Code files should be able to `require` specific migrations as well, to allow
 	//	developpers to ensure that the schema is at the right version for them.
 
