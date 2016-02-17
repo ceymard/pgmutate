@@ -4,12 +4,18 @@
 
 // code version - vs - database migration status
 
-var DATABASE_URL = process.env.DATABASE_URL
+const DATABASE_URL = process.env.DATABASE_URL
 
-var mz = require('mz')
-var co = require('co')
-var L = require('../src/log')
-var Mutator = require('../src/mutator')
+const mz = require('mz')
+const co = require('co')
+
+const L = require('../src/log')
+const bootstrap = require('../src/bootstrap')
+const Mutator = require('../src/mutator')
+const db = require('../src/db')
+const cfg = require('../src/config')
+const mutation = require('../src/mutation')
+
 // var pgp = require('pg-promise')()
 // var PG = pgp(DATABASE_URL)
 
@@ -77,7 +83,29 @@ var config = {
 co(function* () {
 
 	var m = new Mutator()
-	yield m.getMutations()
+
+	// yield m.getFileMutations(process.cwd())
+	// yield m.getRemoteMutations()
+
+	yield bootstrap()
+	yield m.getAllMutations()
+
+	if (cfg.command === 'up') {
+		for (let mt of m.mutations.filter(m => m.status === mutation.STATUS_UNAPPLIED || m.status === mutation.STATUS_CODE_HASH)) {
+			try {
+				yield mt.up()
+			} catch (e) {
+				console.error('\n' + e.stack)
+				break
+			}
+			// console.log(mt)
+		}
+	} else if (cfg.command === 'status') {
+		yield m.status()
+	}
+
+
+	db.pgp.end()
 
 	// when calling without a specific command, it will be assumed that we
 	// execute `migrate`.

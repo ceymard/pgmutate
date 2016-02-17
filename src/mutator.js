@@ -1,58 +1,28 @@
 'use strict'
 
-var path = require('path')
-var co = require('co')
-var fs = require('mz/fs')
-var murmur = require('murmur')
-var c = require('colors/safe')
+const path = require('path')
+const co = require('co')
+const fs = require('mz/fs')
 
-const UP_ARROW = c.green.bold('\u2191') // up arrow
-const DOWN_ARROW = c.red.bold('\u2193') // down
-const EQUIVALENT = c.cyan.bold('\u2261')
-const CHECK = c.cyan.bold('\u2713')
+const cfg = require('./config')
+const db = require('./db').db
+const Mutation = require('./mutation').Mutation
+const mutation = require('./mutation')
 
-
-var L = require('./log')
-
-function Mutation(opts) {
-	this.filename = opts.filename
-	this.module = opts.module
-	this.hash = opts.hash
-	this.mutation = opts.mutation
-	this.timestamp = opts.timestamp
-}
-
-Mutation.prototype = {}
-
-Mutation.prototype.report = function () {
-	console.log(`  ${EQUIVALENT} ${c.bold(this.filename)}`)
-}
-
-/**
-
-type Mutation = {
-	filename : String.
-	module : String,
-	hash : String,
-	stamp : String // for schema mutations
-}
-
- */
 
 function Mutator(pth) {
 	// Base path that we're going to check
 	this.path = pth || process.cwd()
-	this.base_module = 'sw-pg-auth'
+	this.base_module = '<??>'
 	this.mutations = null
 }
 
 Mutator.prototype = {}
 
 /**
- * Recursively get sql files for a given path.
- * Path is obligatorily a directory
- * @param {[type]} path)         {} [description]
- * @yield {[type]} [description]
+ * Recursively get sql files for a given mutation path.
+ * Path is obligatorily a directory containing migrations.
+ * It also is an absolute path.
  */
 Mutator.prototype.getSqlFiles = co.wrap(function* getSqlFiles(pth) {
 
@@ -64,51 +34,95 @@ Mutator.prototype.getSqlFiles = co.wrap(function* getSqlFiles(pth) {
 		if (stat.isDirectory())
 			sqlfiles = sqlfiles.concat(yield this.getSqlFiles(path.join(pth, f)))
 		else if (f.endsWith('.sql')) {
-			sqlfiles.push(yield this.makeMutation(fullpath))
+			sqlfiles.push(yield Mutation.fromFile(fullpath, this.base_module, this.path))
 		}
 	}
 
 	return sqlfiles
 })
 
-/**
- * Create a Mutation object from the given file.
- * @param {[type]} pth)          {} [description]
- * @returns {Mutation} The Mutation object representing this file
- */
-Mutator.prototype.makeMutation = co.wrap(function* makeMutation(pth) {
 
-	let filename = path.basename(pth)
-	let matches = /^(\d+)_.*$/.exec(filename)
-	let mutation = yield fs.readFile(pth, 'utf-8')
-	let module = path.join(this.base_module, path.dirname(pth.replace(`${this.path}/`, '')))
+Mutator.prototype.getRemoteMutations = co.wrap(function* getRemoteMutations() {
 
-	return new Mutation({
-		filename: path.basename(pth),
-		module: module,
-		hash: murmur.hash128(mutation).hex(),
-		mutation: mutation,
-		timestamp: matches ? matches[1] : ''
-	})
+	let res = yield db.query(`
+		SELECT * FROM ${cfg.mutation_table} ORDER BY module, name
+	`)
+
+	for (let m of res) {
+		m = new Mutation(m)
+		for (let fm of this.mutations) {
+			if (m.key === fm.key) {
+				fm.merge(m)
+			}
+		}
+	}
+	// console.log(res)
+
 })
+
 
 /**
  * Get the mutations defined at a given path.
  * @param  {String} path The folder that we want to check mutations for.
  * @return {Array<Mutation>} The mutations to be applied.
  */
-Mutator.prototype.getMutations = co.wrap(function* getMutations(path) {
+Mutator.prototype.getFileMutations = co.wrap(function* getMutations(pth, module) {
+
 	// First, get to the root of the project by looking for its package.json
 
-	var files = yield this.getSqlFiles(this.path)
-	this.mutations = files
-	this.report()
-	// for (let f of files)
-	// 	f.report()
-	// console.log(files)
+	while (pth !== '/') {
+		if (yield fs.exists(path.join(pth, 'package.json')))
+			break
+		pth = path.dirname(pth)
+	}
 
-	// Then, look for its mutations/ folder, or whatever is defined in the package.json'
-	// pgmutate options ?
+	let pkg = JSON.parse(yield fs.readFile(path.join(pth, 'package.json'), 'utf-8'))
+	this.base_module = pkg.name
+
+	// FIXME scan sub modules in node_modules to look for those that could have mutations
+
+	this.path = path.join(pth, 'mutations') // FIXME scan configuration
+
+	var files = yield this.getSqlFiles(this.path)
+
+	try {
+		var submodules = yield fs.readdir(path.join(pth, 'node_modules'))
+		for (let m of submodules) {
+			let module_path = path.join(pth, 'node_modules', m)
+			var more = yield this.getFileMutations(module_path)
+			files = files.concat(more)
+		}
+	} catch (e) {
+		// console.error(e.stack)
+	}
+
+	if (module)
+		files = files.filter(mut => mut.module === module || mut.module.startsWith(module + '/'))
+
+	this.mutations = files
+
+	return files
+
+})
+
+/**
+ * [* description]
+ */
+Mutator.prototype.getAllMutations = co.wrap(function* () {
+
+	yield this.getFileMutations(process.cwd())
+	yield this.getRemoteMutations()
+
+	this.mutations = this.mutations.sort((a, b) => {
+		if (parseInt(a.timestamp) < parseInt(b.timestamp)) return -1
+		if (parseInt(a.timestamp) > parseInt(b.timestamp)) return 1
+		if (a.module < b.module) return -1
+		if (a.module > b.module) return 1
+		if (a.name < b.name) return -1
+		if (a.name > b.name) return 1
+		return 0
+	})
+
 })
 
 /**
@@ -116,28 +130,18 @@ Mutator.prototype.getMutations = co.wrap(function* getMutations(path) {
  * @param  {[type]} opts [description]
  * @return {[type]}      [description]
  */
-Mutator.prototype.report = function report(opts) {
+Mutator.prototype.status = co.wrap(function* status(opts) {
 
-	this.mutations = this.mutations.sort((a, b) => {
-		if (a.module < b.module) return -1
-		if (a.module > b.module) return 1
-		if (parseInt(a.timestamp) < parseInt(b.timestamp)) return -1
-		if (parseInt(a.timestamp) > parseInt(b.timestamp)) return 1
-		if (a.filename < b.filename) return -1
-		if (a.filename > b.filename) return 1
-		return 0
-	})
-
-	let prev_module = ''
+	// let prev_module = ''
 	for (let m of this.mutations) {
-		if (prev_module !== m.module) {
-			console.log(`[${c.yellow.bold(m.module)}]`)
-			prev_module = m.module
-		}
+		// if (prev_module !== m.module) {
+		// 	console.log(`${RIGHT_ARROW} ${c.yellow.bold(m.module)}`)
+		// 	prev_module = m.module
+		// }
 		m.report()
 	}
 
-}
+})
 
 /**
  * Find the nearest package.json

@@ -1,6 +1,9 @@
+'use strict'
 
-var db = require('./db')
-var cfg = require('./config')
+const co = require('co')
+
+const db = require('./db').db
+const cfg = require('./config')
 
 
 /**
@@ -12,6 +15,8 @@ var bootstrap = co.wrap(function* bootstrap () {
 	let tbl = `"${cfg.schema}"."${cfg.table}"`
 
 	let create_sql = `
+		create schema if not exists ${cfg.schema};
+
 		create table if not exists ${tbl} (
 			timestamp Timestamp,
 			module Text,
@@ -24,10 +29,10 @@ var bootstrap = co.wrap(function* bootstrap () {
 		);
 
 		create unique index if not exists pgmutate_mutation_name
-			on ${tbl}(timestamp, module, name, mutation) using btree;
+			on ${tbl} using btree (timestamp, module, name, mutation);
 
 		create index if not exists pgmutate_date_applied
-			on ${tbl}(date_applied) using btree;
+			on ${tbl} using btree (date_applied);
 
 		comment on column ${tbl}.timestamp
 			is 'the timestamp part of the mutation file name';
@@ -46,10 +51,11 @@ var bootstrap = co.wrap(function* bootstrap () {
 
 		comment on column ${tbl}.date_applied
 			is 'Timestamp of when the mutation was applied to the database';
-
 	`
 
 	// Execute the creation of the mutations.
 	let res = yield db.query(create_sql)
 
 })
+
+module.exports = bootstrap
