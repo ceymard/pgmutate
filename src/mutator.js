@@ -113,6 +113,9 @@ Mutator.prototype.getAllMutations = co.wrap(function* () {
 	yield this.getFileMutations(process.cwd())
 	yield this.getRemoteMutations()
 
+	if (cfg.module)
+		this.mutations = this.mutations.filter(mut => mut.module.startsWith(cfg.module + '/') || mut.module === cfg.module)
+
 	this.mutations = this.mutations.sort((a, b) => {
 		if (parseInt(a.timestamp) < parseInt(b.timestamp)) return -1
 		if (parseInt(a.timestamp) > parseInt(b.timestamp)) return 1
@@ -134,11 +137,8 @@ Mutator.prototype.status = co.wrap(function* status(opts) {
 
 	// let prev_module = ''
 	for (let m of this.mutations) {
-		// if (prev_module !== m.module) {
-		// 	console.log(`${RIGHT_ARROW} ${c.yellow.bold(m.module)}`)
-		// 	prev_module = m.module
-		// }
-		m.report()
+		if (cfg.all || m.status === mutation.STATUS_CODE_HASH || m.status === mutation.STATUS_UNAPPLIED)
+			m.report()
 	}
 
 })

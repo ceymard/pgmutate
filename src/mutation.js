@@ -50,21 +50,21 @@ function Mutation(opts) {
 	this.hash = opts.hash
 	this.mutation = opts.mutation
 	this.timestamp = opts.timestamp
+	this.remote_mutation = null
 
 	this.status = opts.status
 
-	this.key = `${this.module}-${this.name}`
+	this.key = `${this.module}/${this.name}`
 }
 
 Mutation.prototype = {}
 
 Mutation.prototype.report = function () {
-	console.log(`  ${ST[this.status]} ${this.module}/${c.cyan.bold(this.name)}`)
+	console.log(`  ${ST[this.status]} ${this.module}/${(this.timestamp ? c.blue.bold : c.magenta.bold)(this.name)}`)
 }
 
-
 Mutation.prototype.merge = function (mut) {
-	this.mutation = mut.mutation
+	this.remote_mutation = mut.mutation
 
 	if (mut.hash !== this.hash)
 		this.status = this.timestamp ? STATUS_SCHEMA_HASH : STATUS_CODE_HASH
@@ -96,7 +96,7 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
 		DECLARE down boolean = false;
 	BEGIN
 
-		${mutation}
+		${cfg.ghost ? '' : mutation}
 
 		INSERT INTO ${cfg.mutation_table}
 			(name, module, date_applied, ghost, mutation, hash, timestamp)
@@ -105,7 +105,7 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
 	END $pgmutation$;`
 
 	try {
-		let res = yield db.query(sql, [
+		yield db.query(sql, [
 			this.name,
 			this.module,
 			opts.ghost == true,
@@ -128,6 +128,8 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
  */
 Mutation.prototype.down = co.wrap(function* down() {
 
+	if (this.remote_mutation === null) return
+
 	process.stdout.write(`  ${DOWN_ARROW} de-applying ${c.gray.bold(this.module)} ${this.name}`)
 
 	let sql = `DO $pgmutation$
@@ -135,7 +137,7 @@ Mutation.prototype.down = co.wrap(function* down() {
 		DECLARE down boolean = true;
 	BEGIN
 
-		${this.mutation}
+		${cfg.ghost ? '' : this.remote_mutation}
 
 		DELETE FROM ${cfg.mutation_table} WHERE
 			"name" = $1 AND "module" = $2;

@@ -102,6 +102,25 @@ co(function* () {
 		}
 	} else if (cfg.command === 'status') {
 		yield m.status()
+	} else if (cfg.command === 'down') {
+
+		m.mutations.reverse()
+
+		for (let mut of m.mutations) {
+
+			if (cfg.all) {
+				// remove everything if all is given to down
+				yield mut.down()
+				continue
+			}
+
+			// or remove explicitely the given mutation
+			for (let muts of cfg.args) {
+				if (mut.key === muts) {
+					yield mut.down()
+				}
+			}
+		}
 	}
 
 
