@@ -7,7 +7,8 @@ var res = nopt({
 }, {
 	a: ['--all'],
 	g: ['--ghost'],
-	m: ['-m']
+	m: ['--module'],
+	i: ['--ignore-remote']
 })
 
 // console.log(res)
@@ -20,7 +21,8 @@ const cfg = {
 	args: res.argv.remain.slice(1),
 	all: res.all,
 	ghost: res.ghost,
-	module: res.module
+	module: res.module,
+	ignore_remote: res['ignore-remote']
 }
 
 cfg.mutation_table = `"${cfg.schema}"."${cfg.table}"`

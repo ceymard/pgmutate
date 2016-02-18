@@ -85,16 +85,17 @@ Mutator.prototype.getFileMutations = co.wrap(function* getMutations(pth, module)
 
 	var files = yield this.getSqlFiles(this.path)
 
-	try {
-		var submodules = yield fs.readdir(path.join(pth, 'node_modules'))
-		for (let m of submodules) {
-			let module_path = path.join(pth, 'node_modules', m)
-			var more = yield this.getFileMutations(module_path)
-			files = files.concat(more)
-		}
-	} catch (e) {
-		// console.error(e.stack)
-	}
+	// FIXME : should declare something in the package.json instead of scanning it all.
+	// try {
+	// 	var submodules = yield fs.readdir(path.join(pth, 'node_modules'))
+	// 	for (let m of submodules) {
+	// 		let module_path = path.join(pth, 'node_modules', m)
+	// 		var more = yield this.getFileMutations(module_path)
+	// 		files = files.concat(more)
+	// 	}
+	// } catch (e) {
+	// 	// console.error(e.stack)
+	// }
 
 	if (module)
 		files = files.filter(mut => mut.module === module || mut.module.startsWith(module + '/'))

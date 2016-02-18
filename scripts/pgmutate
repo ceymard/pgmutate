@@ -15,67 +15,7 @@ const Mutator = require('../src/mutator')
 const db = require('../src/db')
 const cfg = require('../src/config')
 const mutation = require('../src/mutation')
-
-// var pgp = require('pg-promise')()
-// var PG = pgp(DATABASE_URL)
-
-
-/**
- * [*run_migration description]
- * @param {String} body	The body of the migration
- * @param {boolean} up  Whether
- */
-var run_migration = co.wrap(function* run_migration(body, up) {
-
-	let _up = 'true'
-	let _down = 'false'
-
-	if (!up) {
-		_up = 'false'
-		_down = 'true'
-	}
-
-	body = ` DO $$
-		DECLARE up boolean := ${_up};
-		DECLARE down boolean := ${_down};
-	BEGIN
-		${body}
-	END $$;`
-
-})
-
-
-var create_migration = co.wrap(function* create_migration() {
-	var body = `
-		if down then
-			/**
-			 * write the down migration first.
-			 */
-
-		else
-			/**
-			 * Write the up migration here (create, ...)
-			 */
-
-		end if;
-	`
-})
-
-// Migrations are found
-// in /migrations/
-// in node_modules/.../migrations
-// the final name of the migration is <package_name>/<...subdirs>/<migration_name>
-
-// We want to know :
-// 		in which schema to save the migration table
-// 		what to call the migration table
-var config = {
-	schema: 'public',
-	table: 'pgmutate_migrations',
-	namespace: '__default__',
-	code_dir: '',
-	db_url: process.env.DATABASE_URL
-}
+const c = require('colors')
 
 /**
  * Load the migrations
@@ -92,9 +32,15 @@ co(function* () {
 
 	if (cfg.command === 'up') {
 		for (let mt of m.mutations.filter(m => m.status === mutation.STATUS_UNAPPLIED || m.status === mutation.STATUS_CODE_HASH)) {
+
+			if (cfg.args.length > 0 && cfg.args.indexOf(mt.key) === -1)
+				continue;
+
 			try {
 				yield mt.up()
 			} catch (e) {
+				console.error(c.red(e.detail))
+				console.error(c.red(e.where))
 				console.error('\n' + e.stack)
 				break
 			}

@@ -100,19 +100,21 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
 
 		INSERT INTO ${cfg.mutation_table}
 			(name, module, date_applied, ghost, mutation, hash, timestamp)
-		VALUES ($1, $2, NOW(), $3, $4, $5, $6);
+		VALUES ($/name/, $/mod/, NOW(), $/ghost/, $/mut/, $/hash/, $/ts/);
 
 	END $pgmutation$;`
 
 	try {
-		yield db.query(sql, [
-			this.name,
-			this.module,
-			opts.ghost == true,
-			this.mutation,
-			this.hash,
-			this.timestamp ? new Date(parseInt(this.timestamp) * 1000) : null
-		])
+		// FIXME utiliser des transactions et exécuter la migration séparément
+		// de l'insert dans la table de mutations pour éviter de l'escaping intempestif
+		yield db.query(sql, {
+			name: this.name,
+			mod: this.module,
+			ghost: opts.ghost == true,
+			mut: this.mutation,
+			hash: this.hash,
+			ts: this.timestamp ? new Date(parseInt(this.timestamp) * 1000) : null
+		})
 
 		console.log(` ${c.green.bold('OK')}`)
 
@@ -128,7 +130,9 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
  */
 Mutation.prototype.down = co.wrap(function* down() {
 
-	if (this.remote_mutation === null) return
+	let down_mutation = cfg.ignore_remote ? this.mutation : this.remote_mutation
+
+	if (down_mutation === null) return
 
 	process.stdout.write(`  ${DOWN_ARROW} de-applying ${c.gray.bold(this.module)} ${this.name}`)
 
@@ -137,7 +141,7 @@ Mutation.prototype.down = co.wrap(function* down() {
 		DECLARE down boolean = true;
 	BEGIN
 
-		${cfg.ghost ? '' : this.remote_mutation}
+		${cfg.ghost ? '' : down_mutation}
 
 		DELETE FROM ${cfg.mutation_table} WHERE
 			"name" = $1 AND "module" = $2;
