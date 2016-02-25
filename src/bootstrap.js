@@ -29,7 +29,7 @@ var bootstrap = co.wrap(function* bootstrap () {
 		);
 
 		create unique index if not exists pgmutate_mutation_name
-			on ${tbl} using btree (timestamp, module, name, mutation);
+			on ${tbl} using btree (timestamp, module, name);
 
 		create index if not exists pgmutate_date_applied
 			on ${tbl} using btree (date_applied);

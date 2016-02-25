@@ -98,23 +98,31 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
 
 		${cfg.ghost ? '' : mutation}
 
-		INSERT INTO ${cfg.mutation_table}
-			(name, module, date_applied, ghost, mutation, hash, timestamp)
-		VALUES ($/name/, $/mod/, NOW(), $/ghost/, $/mut/, $/hash/, $/ts/);
-
 	END $pgmutation$;`
 
+	var _this = this
 	try {
-		// FIXME utiliser des transactions et exécuter la migration séparément
-		// de l'insert dans la table de mutations pour éviter de l'escaping intempestif
-		yield db.query(sql, {
-			name: this.name,
-			mod: this.module,
-			ghost: opts.ghost == true,
-			mut: this.mutation,
-			hash: this.hash,
-			ts: this.timestamp ? new Date(parseInt(this.timestamp) * 1000) : null
-		})
+		yield db.tx(co.wrap(function* (t) {
+			// FIXME utiliser des transactions et exécuter la migration séparément
+			// de l'insert dans la table de mutations pour éviter de l'escaping intempestif
+
+			if (!cfg.ghost)
+				yield t.query(sql)
+
+			yield t.query(`INSERT INTO ${cfg.mutation_table}
+				(name, module, date_applied, ghost, mutation, hash, timestamp)
+				VALUES ($/name/, $/mod/, NOW(), $/ghost/, $/mut/, $/hash/, $/ts/);
+			`, {
+				name: _this.name,
+				mod: _this.module,
+				ghost: opts.ghost == true,
+				mut: _this.mutation,
+				hash: _this.hash,
+				ts: _this.timestamp ? new Date(parseInt(_this.timestamp) * 1000) : null
+			})
+
+		}))
+
 
 		console.log(` ${c.green.bold('OK')}`)
 
@@ -143,13 +151,17 @@ Mutation.prototype.down = co.wrap(function* down() {
 
 		${cfg.ghost ? '' : down_mutation}
 
-		DELETE FROM ${cfg.mutation_table} WHERE
-			"name" = $1 AND "module" = $2;
-
 	END $pgmutation$;`
 
+	var _this = this
 	try {
-		yield db.query(sql, [this.name, this.module])
+		yield db.tx(co.wrap(function* (t) {
+
+			yield t.query(sql)
+			yield t.query(`DELETE FROM ${cfg.mutation_table} WHERE
+				"name" = $1 AND "module" = $2;`, [_this.name, _this.module])
+		}))
+
 		console.log(` ${c.green.bold('OK')}`)
 
 	} catch (e) {
