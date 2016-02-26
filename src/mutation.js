@@ -89,7 +89,7 @@ Mutation.prototype.up = co.wrap(function* up(opts) {
 	if (!this.timestamp && this.status !== STATUS_UNAPPLIED)
 		yield this.down(opts)
 
-	process.stdout.write(`  ${UP_ARROW} applying ${c.gray.bold(this.module)} ${this.name}`)
+	process.stdout.write(`  ${UP_ARROW} applying ${c.gray.bold(this.module)}/${this.name}`)
 
 	let sql = `DO $pgmutation$
 		DECLARE up boolean = true;
@@ -142,7 +142,7 @@ Mutation.prototype.down = co.wrap(function* down() {
 
 	if (down_mutation === null) return
 
-	process.stdout.write(`  ${DOWN_ARROW} de-applying ${c.gray.bold(this.module)} ${this.name}`)
+	process.stdout.write(`  ${DOWN_ARROW} de-applying ${c.gray.bold(this.module)}/${this.name}`)
 
 	let sql = `DO $pgmutation$
 		DECLARE up boolean = false;
