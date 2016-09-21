@@ -1,6 +1,6 @@
 'use strict'
 
-const murmur = require('murmur')
+const crypto = require('crypto')
 const fs = require('mz/fs')
 const path = require('path')
 const co = require('co')
@@ -193,7 +193,7 @@ Mutation.fromFile = co.wrap(function* fromFile(pth, base_module, base) {
 	return new Mutation({
 		name: path.basename(pth),
 		module: module,
-		hash: murmur.hash128(mutation).hex(),
+		hash: crypto.createHash('md5').update(mutation).digest('hex'),
 		mutation: mutation,
 		timestamp: matches ? matches[1] : '',
 		status: STATUS_UNAPPLIED
