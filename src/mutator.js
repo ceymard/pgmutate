@@ -120,8 +120,8 @@ Mutator.prototype.getAllMutations = co.wrap(function* () {
 		this.mutations = this.mutations.filter(mut => mut.module.startsWith(cfg.module + '/') || mut.module === cfg.module)
 
 	this.mutations = this.mutations.sort((a, b) => {
-		if (parseInt(a.timestamp) < parseInt(b.timestamp)) return -1
-		if (parseInt(a.timestamp) > parseInt(b.timestamp)) return 1
+		if (parseInt(a.timestamp||Number.MAX_SAFE_INTEGER) < parseInt(b.timestamp||Number.MAX_SAFE_INTEGER)) return -1
+		if (parseInt(a.timestamp||Number.MAX_SAFE_INTEGER) > parseInt(b.timestamp||Number.MAX_SAFE_INTEGER)) return 1
 		if (a.module < b.module) return -1
 		if (a.module > b.module) return 1
 		if (a.name < b.name) return -1
