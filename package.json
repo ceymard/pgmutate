@@ -1,6 +1,6 @@
 {
   "name": "pgmutate",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "repository": "https://github.com/ceymard/pgmutate",
   "description": "A migration utility for PostgreSQL designed for schema and code changes inside your database.",
   "license": "MIT",
@@ -12,6 +12,6 @@
     "colors": "^1.1.2",
     "mz": "^2.3.0",
     "nopt": "^3.0.6",
-    "pg-promise": "^3.1.2"
+    "pg-promise": "^5.3.4"
   }
 }

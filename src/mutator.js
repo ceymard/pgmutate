@@ -87,7 +87,10 @@ Mutator.prototype.getFileMutations = co.wrap(function* getMutations(pth, module)
 
 	// FIXME : should declare something in the package.json instead of scanning it all.
 	try {
-		for (let m of (pkg.pgmutate||{}).import||[]) {
+		var imports = (pkg.pgmutate||{}).import||[]
+		if (!Array.isArray(imports)) imports = [imports]
+
+		for (let m of imports) {
 			let module_path = path.join(pth, 'node_modules', m)
 			var more = yield this.getFileMutations(module_path)
 			files = files.concat(more)
