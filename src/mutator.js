@@ -66,13 +66,13 @@ Mutator.prototype.getRemoteMutations = co.wrap(function* getRemoteMutations() {
  * @param  {String} path The folder that we want to check mutations for.
  * @return {Array<Mutation>} The mutations to be applied.
  */
-Mutator.prototype.getFileMutations = co.wrap(function* getMutations(pth, module) {
-
+Mutator.prototype.getFileMutations = co.wrap(function* getMutations(pth, module, have_to_find) {
 	// First, get to the root of the project by looking for its package.json
 
 	while (pth !== '/') {
 		if (yield fs.exists(path.join(pth, 'package.json')))
 			break
+		if (have_to_find) throw new Error(`can't find package.json in ${pth}`)
 		pth = path.dirname(pth)
 	}
 
@@ -92,11 +92,11 @@ Mutator.prototype.getFileMutations = co.wrap(function* getMutations(pth, module)
 
 		for (let m of imports) {
 			let module_path = path.join(pth, 'node_modules', m)
-			var more = yield this.getFileMutations(module_path)
+			var more = yield this.getFileMutations(module_path, null, true)
 			files = files.concat(more)
 		}
 	} catch (e) {
-		// console.error(e.stack)
+		console.error(e.stack)
 	}
 
 	if (module)
