@@ -1,17 +1,20 @@
 {
   "name": "pgmutate",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "repository": "https://github.com/ceymard/pgmutate",
   "description": "A migration utility for PostgreSQL designed for schema and code changes inside your database.",
   "license": "MIT",
   "bin": {
-    "pgmutate": "./scripts/pgmutate"
+    "pgmutate": "./lib/cli.js"
   },
   "dependencies": {
-    "co": "^4.6.0",
-    "colors": "^1.1.2",
-    "mz": "^2.3.0",
-    "nopt": "^3.0.6",
-    "pg-promise": "^5.3.4"
+    "fs-extra": "^5.0.0",
+    "pg-promise": "^5.3.4",
+    "recursive-readdir": "^2.2.1"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^5.0.0",
+    "@types/node": "^8.5.2",
+    "@types/recursive-readdir": "^2.2.0"
   }
 }
