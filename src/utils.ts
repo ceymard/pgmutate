@@ -21,6 +21,8 @@ export async function getInfos(dir?: string): Promise<Info> {
         ...content
       } as Info
     }
+
+    dir = pth.join(dir, '..')
   }
   throw new Error('not found')
 }

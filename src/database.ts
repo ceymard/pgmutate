@@ -2,9 +2,7 @@
 import * as pgp from 'pg-promise'
 const database = pgp()
 
-const url = process.env.DATABASE_URL
-if (!url)
-  throw new Error(`pgmutate needs the $DATABASE_URL to be set`)
+const url = process.env.DATABASE_URL || 'postgres://user:pass@non_existent_server:5432/database'
 
 export interface Extensions {
 
