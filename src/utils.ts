@@ -33,7 +33,7 @@ export interface Script {
 
 import * as rd from 'recursive-readdir'
 
-export async function getScripts(dir: string, basedir: ''): Promise<Script[]> {
+export async function getScripts(dir: string): Promise<Script[]> {
 
   const mutdir = pth.join(dir, 'mutations')
   const files = await rd(mutdir)
@@ -42,8 +42,9 @@ export async function getScripts(dir: string, basedir: ''): Promise<Script[]> {
   for (var f of files) {
     if (!f.endsWith('.sql'))
       continue
+    const name = f.replace(mutdir, '').replace(/.sql$/, '').slice(1)
     scripts.push({
-      name: f.replace(mutdir, '').replace(/.sql$/, ''),
+      name,
       source: await fs.readFile(f, 'utf-8')
     })
   }

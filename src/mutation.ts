@@ -1,4 +1,7 @@
 import {db} from './database'
+import * as cr from 'crypto'
+
+const re_down = /^--\s*!d(?:own)?:?(.*?)$|^--\s*!d(?:own)?\(((?:.|\r|\n)*?)^--\)\s*\n/gim
 
 /**
  * Memoize un appel d'un get(). À n'utiliser que sur des properties calculées,
@@ -41,19 +44,24 @@ export class Mutation {
   static compare(mut1: Mutation, mut2: Mutation): 1 | 0 | -1 {
     return mut1.dependsOn(mut2) ? 1 : // mut1 needs to be run after mut2
            mut2.dependsOn(mut1) ? -1 :
+           mut1.dependencies.length > mut2.dependencies.length ? 1 :
+           mut1.dependencies.length < mut2.dependencies.length ? -1 :
+           mut1.name < mut2.name ? 1 :
+           mut1.name > mut2.name ? -1 :
            0
   }
 
   /**
    * A registry where all the mutations are stored. It is sorted by mutation name.
    */
-  static registry: Mutation[]
+  public registry: Mutation[]
 
   //////////////////////////////////////
 
   constructor(
     public name: string,
-    public source: string,
+    public module: string,
+    public source: string
   ) {
 
   }
@@ -66,13 +74,31 @@ export class Mutation {
     return this.dependencies.indexOf(mutation) > -1
   }
 
+  get full_name() {
+    return `${this.module}:${this.name}`
+  }
+
   @memoize
   /**
    * A hash that serves to be compared against a previously stored version
    * of the mutation.
    */
   get hash(): string {
-    return ''
+    const hash = cr.createHash('sha256') // this should be enough to avoid collisions
+
+    // we have to be smart about the source and remove only the parts we don't want
+    // to compare only the code.
+    const amended_src = this.source
+      // We remove single line comments, except if they start with a !, as it has meaning to us.
+      .replace(/--(?!\s*!).*?$/gm, '')
+      // we are not handling recursive comments, and we don't care.
+      .replace(/\/\*(.|\r|\n)*?\*\//mg, '')
+      // whitespace should not affect if our file changed or not.
+      .replace(/[\n\r\t\s]/g, ' ')
+      .replace(/ +/g, ' ')
+    hash.update(amended_src)
+
+    return hash.digest('hex')
   }
 
   @memoize
@@ -80,7 +106,7 @@ export class Mutation {
    * Get the list of required names.
    */
   get requires(): string[] {
-    const re_require = /^--\s*require:\s*(.*)$/im
+    const re_require = /^--\s*!r(?:equires?)?:?\s*(.*)$/im
     const match = re_require.exec(this.source)
     if (!match) return []
 
@@ -92,15 +118,19 @@ export class Mutation {
    * Get all the down statements, in reverse order, ready to be applied.
    */
   get down(): string[] {
-    const re_down = /(?:^--\s*d(?:own)?:(.*?)$|^--\s*d(?:own)?\(\s*$(.*?)^--\)\s*$)/gim
     var match: RegExpMatchArray | null
     const res = []
     while (match = re_down.exec(this.source)) {
       const code = match[1] || match[2]
-      res.push(code)
+      res.push(code.trim())
     }
     res.reverse()
-    return []
+    return res
+  }
+
+  @memoize
+  get instructions(): string[] {
+    return this.source.split(re_down)
   }
 
   /**
@@ -111,9 +141,9 @@ export class Mutation {
     const req = this.requires
     var res: Mutation[] = []
 
-    for (var mut of Mutation.registry) {
+    for (var mut of this.registry) {
       for (var r of req) {
-        if (mut.name === r) {
+        if (mut.name === r || mut.full_name === r || r === mut.module) {
           // WARNING we should check for circular dependencies.
           res = [...res, ...mut.dependencies, mut]
         }
@@ -144,12 +174,14 @@ export async function fetchLocalMutations(path?: string): Promise<Mutation[]> {
   if (infos.dmut && infos.dmut.import) {
     imports = infos.dmut.import
     for (var i of imports) {
-      mutations = [...(await fetchLocalMutations(dirname(require.resolve(i)))), ...mutations]
+      mutations = [...(await fetchLocalMutations(
+        dirname(require.resolve(i)))
+      ), ...mutations]
     }
   }
 
   for (var s of await getScripts(infos.path)) {
-    var m = new Mutation(`${name}${s.name}`, s.source)
+    var m = new Mutation(s.name, name, s.source)
     mutations.push(m)
     if (imports.length) {
       for (var i of imports) {
