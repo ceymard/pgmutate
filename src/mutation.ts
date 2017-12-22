@@ -1,4 +1,5 @@
 import * as cr from 'crypto'
+import ch from 'chalk'
 
 const re_down = /^--\s*!d(?:own)?\(((?:.|\r|\n)*?)^--\)\s*\n|^--\s*!d(?:own)?:?(.*?)$/gim
 const re_split = /^--\s*!.*?$|^--\s*!d(?:own)?\((?:(?:.|\r|\n)*?)^--\)\s*\n/gim
@@ -80,6 +81,19 @@ export class Mutation {
   @memoize
   get is_static() {
     return this.serie !== null
+  }
+
+  @memoize
+  get descendants(): Mutation[] {
+    var res = [this] as Mutation[]
+    for (var d of this.dependents)
+      res = [...res, ...d.descendants]
+
+    if (res.length > 1)
+      console.log(`${ch.greenBright(this.full_name)} triggers ${res.slice(1).map(r => r.full_name).join(', ')}`)
+    else
+      console.log(`${ch.greenBright(this.full_name)} triggers nothing`)
+    return res
   }
 
   addDependent(mutation: Mutation) {
@@ -223,13 +237,13 @@ export class MutationRegistry {
         if (m.dependsOn(mut, r)) {
           // WARNING we should check for circular dependencies.
           this.computeDependency(mut)
-          mut.addDependent(m)
+          // mut.addDependent(m)
           found = true
         }
       }
 
       // We stil want to check that this dependency exists
-      if (found) continue
+      // if (found) continue
 
       for (var dep of this.mutations) {
         if (m.dependsOn(dep, r)) {

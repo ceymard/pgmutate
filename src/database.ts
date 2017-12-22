@@ -122,7 +122,8 @@ export class MutationRunner {
         await this.down(mut)
       }
 
-      for (var mut of this.local.mutations) {
+      const to_up = Array.from(this.local.mutations).filter(m => m.tagged_up)
+      for (var mut of to_up) {
         if (!mut.tagged_up) continue
 
         console.log(`» ${mut.full_name}`)
@@ -130,27 +131,43 @@ export class MutationRunner {
 
         await this.up(mut)
         // Immediately try to down the up statement
-        try {
-          // console.log("  trying to down")
-          await query(`savepoint "${mut.full_name}"`)
-          await this.down(mut)
-          // we actually try to reup right after to make sure
-          await this.up(mut)
-        } catch(e) {
-          console.log(ch.redBright(`  !! error was on test re-run`))
-          // console.log("  ")
-          throw e
-        } finally {
-          await query(`rollback to savepoint "${mut.full_name}"`)
-        }
 
         await query(`insert into ${tbl}(name, source)
-          values ($(full_name), $(source))`,
-          mut
+        values ($(full_name), $(source))`,
+        mut
         )
       }
 
-      // Once we're done, we might want to commit...
+      var try_to_down = [] as Mutation[]
+      for (var u of to_up) {
+        for (var d of u.descendants) {
+          if (try_to_down.indexOf(d) === -1) try_to_down.push(d)
+        }
+      }
+      try_to_down.reverse()
+
+      const runs = [] as string[]
+      try {
+        // console.log("  trying to down")
+        await query(`savepoint "undoing and redoing"`)
+        for (var m of try_to_down) {
+          runs.push(`« ${m.full_name}`)
+          await this.down(m)
+        }
+        for (var m of to_up) {
+          runs.push(`» ${m.full_name}`)
+          await this.up(m)
+        }
+      } catch(e) {
+        console.log(ch.redBright(`  !! error was on test re-run`))
+        console.log(ch.gray(`  this would indicate that your down mutation do not really undo or that you are missing some key dependencies in your mutations.`))
+        console.log(ch.gray(runs.join('\n')))
+        throw e
+      } finally {
+        await query(`rollback to savepoint "undoing and redoing"`)
+      }
+
+    // Once we're done, we might want to commit...
       await query('commit')
     } catch (e) {
       await query('rollback')
