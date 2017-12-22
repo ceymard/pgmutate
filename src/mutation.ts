@@ -44,6 +44,24 @@ export class Mutation {
   public serie: number | null = null
   public errors: string[] = []
 
+  tagged_up = false
+  tagged_down = false
+
+  tagDown() {
+    for (var _ of this.dependents)
+      _.tagDown()
+    this.tagged_down = true
+  }
+
+  tagUp() {
+    // console.log(`tagging ${this.full_name} up !`)
+    // console.log(this.dependents.map(d => d.full_name))
+
+    for (var _ of this.dependents)
+      _.tagUp()
+    this.tagged_up = true
+  }
+
   //////////////////////////////////////
 
   constructor(
@@ -156,9 +174,9 @@ export class Mutation {
 
     // Modules are required directly
     if (r === m.module) return true
-
     if (m.module !== module) return false
-    if (m.name !== name) return false
+
+    if (m.name !== name && m.name.indexOf(`${name}/`) !== 0) return false
     if (serie != null && m.serie !== serie) return false
 
     if (this.serie != null && m.serie == null)
@@ -173,14 +191,20 @@ export class Mutation {
 
 export class MutationRegistry {
 
+  names: {[name: string]: Mutation} = {}
   mutations = new Set<Mutation>()
   protected initial: Set<Mutation>
 
   constructor(mutations: Mutation[]) {
     this.initial = new Set(mutations)
     for (var m of this.initial) {
+      this.names[m.full_name] = m
       this.computeDependency(m)
     }
+  }
+
+  get(full_name: string): Mutation | undefined {
+    return this.names[full_name]
   }
 
   /**
@@ -209,6 +233,7 @@ export class MutationRegistry {
 
       for (var dep of this.mutations) {
         if (m.dependsOn(dep, r)) {
+          dep.addDependent(m)
           found = true
           break
         }
@@ -246,11 +271,6 @@ export async function fetchLocalMutations(path?: string): Promise<Mutation[]> {
   for (var s of await getScripts(infos.path)) {
     var m = new Mutation(s.name, name, s.source)
     mutations.push(m)
-    if (imports.length) {
-      for (var i of imports) {
-        m.requires.unshift(i)
-      }
-    }
   }
 
   return mutations
