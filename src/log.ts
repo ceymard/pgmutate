@@ -5,5 +5,5 @@ export var ERRORS = [] as string[]
 
 export function err(msg: string) {
   ERRORS.push(msg)
-  console.log(ch.redBright.bold('/!\\'), msg)
+  console.log(ch.redBright.bold(' error:'), msg)
 }

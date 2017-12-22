@@ -1,6 +1,4 @@
-import {db} from './database'
 import * as cr from 'crypto'
-import * as log from './log'
 
 const re_down = /^--\s*!d(?:own)?\(((?:.|\r|\n)*?)^--\)\s*\n|^--\s*!d(?:own)?:?(.*?)$/gim
 const re_split = /^--\s*!.*?$|^--\s*!d(?:own)?\((?:(?:.|\r|\n)*?)^--\)\s*\n/gim
@@ -38,27 +36,13 @@ export enum MutationStatus {
 
 export class Mutation {
 
-
-  /**
-   * Comparison function
-   * @param mut1
-   * @param mut2
-   */
-  static compare(mut1: Mutation, mut2: Mutation): 1 | 0 | -1 {
-    return mut1.dependsOn(mut2) ? 1 : // mut1 needs to be run after mut2
-           mut2.dependsOn(mut1) ? -1 :
-           mut1.dependencies.length > mut2.dependencies.length ? 1 :
-           mut1.dependencies.length < mut2.dependencies.length ? -1 :
-           mut1.name < mut2.name ? 1 :
-           mut1.name > mut2.name ? -1 :
-           0
-  }
-
   /**
    * A registry where all the mutations are stored. It is sorted by mutation name.
    */
   public registry: Mutation[]
   public dependents: Mutation[] = []
+  public serie: number | null = null
+  public errors: string[] = []
 
   //////////////////////////////////////
 
@@ -67,20 +51,17 @@ export class Mutation {
     public module: string,
     public source: string
   ) {
-
+    const serie = /(.*?)\.(\d+)$/
+    const match = serie.exec(name)
+    if (match) {
+      this.name = match[1]
+      this.serie = parseInt(match[2])
+    }
   }
 
   @memoize
   get is_static() {
-    return !!/^--\s*!static/gm.test(this.source)
-  }
-
-  /**
-   * True if this mutation needs the provided mutation to be executed
-   * before itself.
-   */
-  dependsOn(mutation: Mutation) {
-    return this.dependencies.indexOf(mutation) > -1
+    return this.serie !== null
   }
 
   addDependent(mutation: Mutation) {
@@ -88,7 +69,7 @@ export class Mutation {
   }
 
   get full_name() {
-    return `${this.module}:${this.name}`
+    return `${this.module}:${this.name}${this.serie != null ? '.' + this.serie : ''}`
   }
 
   @memoize
@@ -145,52 +126,103 @@ export class Mutation {
    * Get the list of required names.
    */
   get requires(): string[] {
+    const res = [] as string[]
+
+    if (this.serie && this.serie > 1)
+      res.push(`${this.name}.${this.serie - 1}`)
+
     const re_require = /^--\s*!r(?:equires?)?:?\s*(.*)$/im
     const match = re_require.exec(this.source)
-    if (!match) return []
+    if (!match) return res
 
-    return match[1].split(',').map(n => n.trim())
+    return [...res, ...match[1].split(',').map(n => {
+      var res = n.trim()
+
+      return res
+    })]
   }
 
-  matchesRequirement(r: string) {
-    return this.name === r ||
-      this.full_name === r ||
-      this.module === r
+  dependsOn(m: Mutation, r: string) {
+    const re_req = /(?:([^:]+):)?([^\.]+)(?:\.(\d+))?/
+    const match = re_req.exec(r)
+    if (!match) {
+      this.errors.push(`${r} is not a valid requirement`)
+      return
+    }
+
+    const module: string = match[1] || this.module
+    const name: string = match[2]
+    const serie: number | null = match[3] !== undefined ? parseInt(match[3]) : null
+
+    // Modules are required directly
+    if (r === m.module) return true
+
+    if (m.module !== module) return false
+    if (m.name !== name) return false
+    if (serie != null && m.serie !== serie) return false
+
+    if (this.serie != null && m.serie == null)
+      this.errors.push(`serial migrations cannot depend on non-serial ones (caused by ${m.full_name})`)
+
+    return true
+  }
+
+
+}
+
+
+export class MutationRegistry {
+
+  mutations = new Set<Mutation>()
+  protected initial: Set<Mutation>
+
+  constructor(mutations: Mutation[]) {
+    this.initial = new Set(mutations)
+    for (var m of this.initial) {
+      this.computeDependency(m)
+    }
   }
 
   /**
    *  Get the list of mutation we wish to see applied before us.
    */
-  @memoize
-  get dependencies(): Mutation[] {
-    const req = this.requires
-    var res: Mutation[] = []
+  computeDependency(m: Mutation) {
+    const req = m.requires
+
+    if (this.mutations.has(m)) return
 
     for (var r of req) {
       var found = false
-      for (var mut of this.registry) {
-        if (mut.matchesRequirement(r)) {
+      for (var mut of this.initial) {
+        if (mut === m) continue
+
+        if (m.dependsOn(mut, r)) {
           // WARNING we should check for circular dependencies.
-          res = [...res, ...mut.dependencies, mut]
-          mut.addDependent(this)
+          this.computeDependency(mut)
+          mut.addDependent(m)
+          found = true
+        }
+      }
+
+      // We stil want to check that this dependency exists
+      if (found) continue
+
+      for (var dep of this.mutations) {
+        if (m.dependsOn(dep, r)) {
           found = true
           break
         }
       }
-      if (!found)
-        log.err(`${this.full_name} requires non existent module ${r}`)
+
+      if (found) continue
+      m.errors.push(`${m.full_name} requires non existent module ${r}`)
     }
 
-    return res
+    this.mutations.add(m)
+    this.initial.delete(m)
   }
-
 }
 
-
-
-export async function fetchRemoteMutations(): Promise<Mutation[]> {
-  return []
-}
 
 
 import {getInfos, getScripts} from './utils'
