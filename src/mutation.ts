@@ -1,5 +1,4 @@
 import * as cr from 'crypto'
-import ch from 'chalk'
 
 const re_down = /^--\s*!d(?:own)?\(((?:.|\r|\n)*?)^--\)\s*\n|^--\s*!d(?:own)?:?(.*?)$/gim
 const re_split = /^--\s*!.*?$|^--\s*!d(?:own)?\((?:(?:.|\r|\n)*?)^--\)\s*\n/gim
@@ -40,28 +39,11 @@ export class Mutation {
   /**
    * A registry where all the mutations are stored. It is sorted by mutation name.
    */
-  public registry: Mutation[]
-  public dependents: Mutation[] = []
+  public children = new Set<Mutation>()
+  public parents = new Set<Mutation>()
+
   public serie: number | null = null
   public errors: string[] = []
-
-  tagged_up = false
-  tagged_down = false
-
-  tagDown() {
-    for (var _ of this.dependents)
-      _.tagDown()
-    this.tagged_down = true
-  }
-
-  tagUp() {
-    // console.log(`tagging ${this.full_name} up !`)
-    // console.log(this.dependents.map(d => d.full_name))
-
-    for (var _ of this.dependents)
-      _.tagUp()
-    this.tagged_up = true
-  }
 
   //////////////////////////////////////
 
@@ -83,32 +65,38 @@ export class Mutation {
     return this.serie !== null
   }
 
-  @memoize
-  get descendants(): Mutation[] {
-    var res = [this] as Mutation[]
-    for (var d of this.dependents)
-      res = [...res, ...d.descendants]
+  get is_root() {
+    return this.parents.size === 0
+  }
 
-    if (res.length > 1)
-      console.log(`${ch.greenBright(this.full_name)} triggers ${res.slice(1).map(r => r.full_name).join(', ')}`)
-    else
-      console.log(`${ch.greenBright(this.full_name)} triggers nothing`)
+  @memoize
+  get tree(): Set<Mutation> {
+    var res = new Set<Mutation>()
+    for (var d of this.children) {
+      for (var m of d.tree) {
+        res.add(m)
+      }
+    }
+
     return res
   }
 
-  addDependent(mutation: Mutation) {
-    this.dependents.push(mutation)
+  @memoize
+  get tree_reverse(): Set<Mutation> {
+    const res = new Set<Mutation>()
+    for (var m of Array.from(this.tree).reverse())
+      res.add(m)
+    return res
   }
 
   get full_name() {
     return `${this.module}:${this.name}${this.serie != null ? '.' + this.serie : ''}`
   }
 
-  @memoize
   /**
-   * A hash that serves to be compared against a previously stored version
-   * of the mutation.
+   * The hash helps us to determine if a mutation has changed or not.
    */
+  @memoize
   get hash(): string {
     const hash = cr.createHash('sha256') // this should be enough to avoid collisions
 
@@ -127,11 +115,11 @@ export class Mutation {
     return hash.digest('hex')
   }
 
-  @memoize
   /**
    * Get all the down statements, in reverse order, ready to be applied.
    */
-  get down(): string[] {
+  @memoize
+  get down_statements(): string[] {
     var match: RegExpMatchArray | null
     const res = []
     while (match = re_down.exec(this.source)) {
@@ -143,7 +131,7 @@ export class Mutation {
   }
 
   @memoize
-  get up(): string[] {
+  get up_statements(): string[] {
     return this.source
       .replace(/\s*--(?!\s*!).*?$/gm, '')
       // we are not handling recursive comments, and we don't care.
@@ -153,115 +141,86 @@ export class Mutation {
       .map(s => s.trim())
   }
 
-  @memoize
   /**
-   * Get the list of required names.
+   * Runs this mutation and its children
    */
-  get requires(): string[] {
-    const res = [] as string[]
+  async up(fn: (m: Mutation) => any, visited = new Set<Mutation>()) {
+    if (visited.has(this)) return
+    visited.add(this)
+
+    for (var parent of this.parents)
+      await parent.up(fn, visited)
+
+    await fn(this)
+
+    for (var chld of this.children)
+      await chld.up(fn, visited)
+  }
+
+  /**
+   * Removes this mutation along with its children
+   */
+  async down(fn: (m: Mutation) => Promise<any>) {
+    // Check that we haven't already been downed by verifying that
+    // there is no entry in the mutation table
+    for (var chld of this.children)
+      await chld.down(fn)
+
+    await fn(this)
+  }
+
+  computeRequirement(mutations: Mutation[]) {
+
+    var descriptors = [] as string[]
 
     if (this.serie && this.serie > 1)
-      res.push(`${this.name}.${this.serie - 1}`)
+      descriptors.push(`${this.name}.${this.serie - 1}`)
 
     const re_require = /^--\s*!r(?:equires?)?:?\s*(.*)$/im
     const match = re_require.exec(this.source)
-    if (!match) return res
+    if (match) {
+      descriptors = [...descriptors, ...match[1].split(',').map(r => r.trim())]
+    }
 
-    return [...res, ...match[1].split(',').map(n => {
-      var res = n.trim()
-
-      return res
-    })]
-  }
-
-  dependsOn(m: Mutation, r: string) {
     const re_req = /(?:([^:]+):)?([^\.]+)(?:\.(\d+))?/
-    const match = re_req.exec(r)
-    if (!match) {
-      this.errors.push(`${r} is not a valid requirement`)
-      return
+
+    for (var desc of descriptors) {
+
+      const match = re_req.exec(desc)
+      if (!match) {
+        this.errors.push(`${desc} is not a valid requirement`)
+        return
+      }
+
+      const module: string = match[1] || this.module
+      const name: string = match[2]
+      const serie: number | null = match[3] !== undefined ? parseInt(match[3]) : null
+
+      // Rebuild the requirement regexp
+      const re_desc = new RegExp(`${module}:${name}${serie ? '\\.' + serie : ''}`)
+      let found = false
+
+      for (var m of mutations) {
+        if (m === this) continue
+
+        // Modules are required directly
+        if (re_desc.test(m.full_name)) {
+          if (this.serie != null && m.serie == null)
+            this.errors.push(`serial migrations cannot depend on non-serial ones (caused by ${m.full_name})`)
+
+          found = true
+          this.parents.add(m)
+          m.children.add(this)
+        }
+      }
+
+      if (!found)
+        this.errors.push(`requirement ${desc} doesn't match any mutation`)
     }
-
-    const module: string = match[1] || this.module
-    const name: string = match[2]
-    const serie: number | null = match[3] !== undefined ? parseInt(match[3]) : null
-
-    // Modules are required directly
-    if (r === m.module) return true
-    if (m.module !== module) return false
-
-    if (m.name !== name && m.name.indexOf(`${name}/`) !== 0) return false
-    if (serie != null && m.serie !== serie) return false
-
-    if (this.serie != null && m.serie == null)
-      this.errors.push(`serial migrations cannot depend on non-serial ones (caused by ${m.full_name})`)
-
-    return true
   }
 
 
 }
-
-
-export class MutationRegistry {
-
-  names: {[name: string]: Mutation} = {}
-  mutations = new Set<Mutation>()
-  protected initial: Set<Mutation>
-
-  constructor(mutations: Mutation[]) {
-    this.initial = new Set(mutations)
-    for (var m of this.initial) {
-      this.names[m.full_name] = m
-      this.computeDependency(m)
-    }
-  }
-
-  get(full_name: string): Mutation | undefined {
-    return this.names[full_name]
-  }
-
-  /**
-   *  Get the list of mutation we wish to see applied before us.
-   */
-  computeDependency(m: Mutation) {
-    const req = m.requires
-
-    if (this.mutations.has(m)) return
-
-    for (var r of req) {
-      var found = false
-      for (var mut of this.initial) {
-        if (mut === m) continue
-
-        if (m.dependsOn(mut, r)) {
-          // WARNING we should check for circular dependencies.
-          this.computeDependency(mut)
-          // mut.addDependent(m)
-          found = true
-        }
-      }
-
-      // We stil want to check that this dependency exists
-      // if (found) continue
-
-      for (var dep of this.mutations) {
-        if (m.dependsOn(dep, r)) {
-          dep.addDependent(m)
-          found = true
-          break
-        }
-      }
-
-      if (found) continue
-      m.errors.push(`${m.full_name} requires non existent module ${r}`)
-    }
-
-    this.mutations.add(m)
-    this.initial.delete(m)
-  }
-}
-
 
 
 import {getInfos, getScripts} from './utils'
@@ -285,6 +244,10 @@ export async function fetchLocalMutations(path?: string): Promise<Mutation[]> {
   for (var s of await getScripts(infos.path)) {
     var m = new Mutation(s.name, name, s.source)
     mutations.push(m)
+  }
+
+  for (var m of mutations) {
+    m.computeRequirement(mutations)
   }
 
   return mutations

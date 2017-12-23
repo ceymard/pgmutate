@@ -1,30 +1,33 @@
 #!/usr/bin/env node
 // import {bootstrap} from './database'
-import {fetchLocalMutations, MutationRegistry} from './mutation'
-import {bootstrap, MutationRunner, fetchRemoteMutations} from './database'
+import {fetchLocalMutations, Mutation} from './mutation'
+// import {bootstrap, MutationRunner, fetchRemoteMutations} from './database'
 import ch from 'chalk'
 import * as log from './log'
 
 async function run() {
-  const reg = new MutationRegistry(await fetchLocalMutations())
+  const local = await fetchLocalMutations()
   var error = false
 
-  await bootstrap()
-  const rem = new MutationRegistry(await fetchRemoteMutations())
+  const visited = new Set<Mutation>()
 
-  for (var m of reg.mutations) {
-    console.log(
-      ch.greenBright(m.hash.slice(0, 6)),
-      m.is_static ? ch.bold.yellowBright(m.full_name) : ch.yellowBright(m.full_name),
-      ch.grey(m.requires.length > 0 ? m.requires.join(' ') : '')
-    )
-    for (var e of m.errors) { log.err(e); error = true }
+  for (var mut of local) {
+    await mut.up(m => {
+      console.log(
+        `${ch.yellowBright(m.module)}:${ch.redBright(m.name)}${m.serie ? ch.greenBright('.' + m.serie) : ''}`,
+      )
+
+      for (var p of m.parents)
+        console.log(ch.grey(`  < ${p.full_name}`))
+
+      for (var e of m.errors) { log.err(e); error = true }
+    }, visited)
     // console.log(m.instructions)
   }
 
   if (!error) {
-    const runner = new MutationRunner(reg, rem)
-    await runner.mutate()
+    // const runner = new MutationRunner(local, remotes)
+    // await runner.mutate()
   }
 
   process.exit(0)

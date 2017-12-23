@@ -74,7 +74,7 @@ export async function fetchRemoteMutations(): Promise<Mutation[]> {
 
   return res.map(dbval => {
     const [module, name] = dbval.name.split(':')
-    return new Mutation(name, module, dbval.source)
+    return new Mutation(name, module, dbval.source, true)
   })
 }
 
@@ -105,11 +105,11 @@ export class MutationRunner {
   }
 
   async up(m: Mutation) {
-    await this.run(m.up)
+    await this.run(m.up_statements)
   }
 
   async down(m: Mutation) {
-    await this.run(m.down)
+    await this.run(m.down_statements)
   }
 
   async mutate() {
