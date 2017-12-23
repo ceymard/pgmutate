@@ -7,6 +7,7 @@ import * as log from './log'
 
 async function run() {
   const local = await fetchLocalMutations()
+  for (var m of local) m.computeRequirement(local)
   var error = false
 
   const visited = new Set<Mutation>()

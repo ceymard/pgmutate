@@ -246,9 +246,5 @@ export async function fetchLocalMutations(path?: string): Promise<Mutation[]> {
     mutations.push(m)
   }
 
-  for (var m of mutations) {
-    m.computeRequirement(mutations)
-  }
-
   return mutations
 }
