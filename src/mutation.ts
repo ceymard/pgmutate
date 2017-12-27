@@ -36,6 +36,17 @@ export enum MutationStatus {
 
 export class Mutation {
 
+  static once<T extends ((mut: Mutation, ...a: any[]) => any)>(fn: T): T {
+    const results = new Map<Mutation, any>()
+    return function(mut: Mutation, ...a: any[]) {
+      if (results.has(mut))
+        return results.get(mut)
+      const res = fn(mut, ...a)
+      results.set(mut, res)
+      return res
+    } as T
+  }
+
   /**
    * A registry where all the mutations are stored. It is sorted by mutation name.
    */

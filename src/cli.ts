@@ -10,19 +10,19 @@ async function run() {
   for (var m of local) m.computeRequirement(local)
   var error = false
 
-  const visited = new Set<Mutation>()
+  const print = Mutation.once(m => {
+    console.log(
+      `${ch.yellowBright(m.module)}:${ch.redBright(m.name)}${m.serie ? ch.greenBright('.' + m.serie) : ''}`,
+    )
+
+    for (var p of m.parents)
+      console.log(ch.grey(`  < ${p.full_name}`))
+
+    for (var e of m.errors) { log.err(e); error = true }
+  })
 
   for (var mut of local) {
-    await mut.up(m => {
-      console.log(
-        `${ch.yellowBright(m.module)}:${ch.redBright(m.name)}${m.serie ? ch.greenBright('.' + m.serie) : ''}`,
-      )
-
-      for (var p of m.parents)
-        console.log(ch.grey(`  < ${p.full_name}`))
-
-      for (var e of m.errors) { log.err(e); error = true }
-    }, visited)
+    await mut.up(print)
     // console.log(m.instructions)
   }
 
