@@ -1,6 +1,6 @@
 
 import * as pgp from 'pg-promise'
-import {Mutation, MutationRegistry} from './mutation'
+import {Mutation} from './mutation'
 import ch from 'chalk'
 
 const database = pgp()
@@ -72,22 +72,44 @@ export async function bootstrap() {
 export async function fetchRemoteMutations(): Promise<Mutation[]> {
   const res = await db.query(`select * from ${tbl}`) as any[]
 
-  return res.map(dbval => {
+  const muts = res.map(dbval => {
     const [module, name] = dbval.name.split(':')
-    return new Mutation(name, module, dbval.source, true)
+    return new Mutation(name, module, dbval.source)
   })
+
+  for (var m of muts)
+    m.computeRequirement(muts)
+
+  return muts
 }
 
 
 export class MutationRunner {
 
+  static down_runner() {
+    return Mutation.once(async function (mut) {
+      for (var stmt of mut.down_statements)
+        await query(stmt)
+    })
+  }
+
+  static up_runner() {
+    return Mutation.once(async function (mut) {
+      for (var stmt of mut.up_statements)
+        await query(stmt)
+    })
+  }
+
+  to_down = new Set<Mutation>()
+  to_up = new Set<Mutation>()
+
   constructor(
-    public local: MutationRegistry,
-    public remote: MutationRegistry
+    local: Mutation[],
+    remote: Mutation[]
   ) {
     // first, compute the list of migrations that will have to be downed
     // console.log(remote.mutations)
-    for (var lo of local.mutations) {
+    for (var lo of local) {
       const rm = remote.get(lo.full_name)
       if (!rm) {
         lo.tagUp()
@@ -110,6 +132,29 @@ export class MutationRunner {
 
   async down(m: Mutation) {
     await this.run(m.down_statements)
+  }
+
+  /**
+   *
+   * @param mutations
+   */
+  async test(mutations: Set<Mutation>) {
+    for (var m of mutations) {
+      try {
+        await query('savepoint "dmut-testing"')
+
+        // We do not try testing on pure leaves.
+        if (m.parents.size > 0 && m.children.size === 0)
+          continue
+
+        await m.up(MutationRunner.up_runner())
+        await m.down(MutationRunner.down_runner())
+        await m.up(MutationRunner.up_runner())
+
+      } finally {
+        await query('restore savepoint "dmut-testing"')
+      }
+    }
   }
 
   async mutate() {

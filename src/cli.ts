@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // import {bootstrap} from './database'
 import {fetchLocalMutations, Mutation} from './mutation'
-// import {bootstrap, MutationRunner, fetchRemoteMutations} from './database'
+import {bootstrap, MutationRunner, fetchRemoteMutations} from './database'
 import ch from 'chalk'
 import * as log from './log'
 

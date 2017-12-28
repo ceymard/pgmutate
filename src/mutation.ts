@@ -71,35 +71,6 @@ export class Mutation {
     }
   }
 
-  @memoize
-  get is_static() {
-    return this.serie !== null
-  }
-
-  get is_root() {
-    return this.parents.size === 0
-  }
-
-  @memoize
-  get tree(): Set<Mutation> {
-    var res = new Set<Mutation>()
-    for (var d of this.children) {
-      for (var m of d.tree) {
-        res.add(m)
-      }
-    }
-
-    return res
-  }
-
-  @memoize
-  get tree_reverse(): Set<Mutation> {
-    const res = new Set<Mutation>()
-    for (var m of Array.from(this.tree).reverse())
-      res.add(m)
-    return res
-  }
-
   get full_name() {
     return `${this.module}:${this.name}${this.serie != null ? '.' + this.serie : ''}`
   }
