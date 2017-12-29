@@ -211,7 +211,7 @@ export class MutationSet extends Set<Mutation> {
 
   private dct: {[name: string]: Mutation} = {}
 
-  constructor(mutations: Mutation[]) {
+  constructor(mutations: Mutation[] = []) {
     super()
     for (var m of mutations) {
       this.add(m)

@@ -26,7 +26,6 @@ async function run() {
 
   for (var mut of local) {
     // await mut.up(print)
-    // console.log(m.instructions)
   }
 
   if (!error) {

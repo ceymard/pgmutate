@@ -111,6 +111,14 @@ export class MutationRunner {
       console.log(ch.greenBright(`  » ${mut.full_name}`))
       for (var stmt of mut.up_statements)
         await query(stmt)
+
+        await query(`insert into ${tbl}(name, source)
+        values ($(full_name), $(source))
+        on conflict (name) do update
+          set source = $(source), date_applied = current_timestamp`,
+        mut
+        )
+
     }
   }
 
@@ -128,21 +136,26 @@ export class MutationRunner {
    *
    * @param mutations
    */
-  async test() {
+  async test(mutations: MutationSet) {
     console.log(`\n--- now testing mutations---\n`)
     var errored = false
-    for (var m of this.local) {
-      try {
+    for (var m of mutations) {
+      // We do not try testing on pure leaves.
+      if (m.parents.size > 0 && m.children.size === 0)
+        continue
 
-        // We do not try testing on pure leaves.
-        if (m.parents.size > 0 && m.children.size === 0)
-          continue
+      try {
+        // Whenever we get to this point, we can consider that all local mutations
+        // are up. As such, we want to track the down mutations that were applied
+        // to reapply them, and them only.
 
         console.log(ch.blueBright.bold(` *** trying to down/up ${m.full_name}`))
         await query('savepoint "dmut-testing"')
 
-        await m.down(MutationRunner.down_runner())
-        await m.up(MutationRunner.up_runner())
+        const downed = new MutationSet()
+        await m.down(MutationRunner.down_runner(downed))
+        const already_up = this.local.diff(downed)
+        await m.up(MutationRunner.up_runner(already_up))
 
       } catch(e) {
         errored = true
@@ -155,33 +168,64 @@ export class MutationRunner {
 
   async mutate() {
     await query('begin')
-    const remote_to_down = this.remote.diff(this.local)
-    const local_to_up = this.local.diff(this.remote)
 
     try {
-      const down = MutationRunner.down_runner(remote_to_down)
+      const remote_to_down = new MutationSet()
+      for (let r of this.remote) {
+        const l = this.local.get(r.full_name)
+        // Schedule a migration to be downed if
+        if (
+          !l // the corresponding local migration is gone
+          || l.hash !== r.hash // the hash changed
+        ) {
+          if (r.serie)
+            throw new Error(`Series mutations can not change, please write a new one instead. (${r.full_name})`)
+          remote_to_down.add(r)
+        }
+      }
+
+      // Migrations that depend on downed migrations need to be tracked as downed
+      // as well, since we're going to re-up them right after.
+      const downed = new MutationSet()
+      const down = MutationRunner.down_runner(downed)
       for (var mut of remote_to_down) {
         await mut.down(down)
       }
 
-      const already_up = this.local.intersect(this.remote)
+      const local_to_up = new MutationSet()
+      for (var l of this.local) {
+        const r = this.remote.get(l.full_name)
+        // Schedule a mutation to be run if
+        if (
+          //   - it was remote and up to date, but was downed
+          downed.get(l.full_name)
+          //   - it was remote but not up to date (different hash)
+          || r && r.hash !== l.hash
+          //   - it was not remote
+          || !r
+        )
+          local_to_up.add(l)
+      }
+
+      const already_up = new MutationSet()
+      for (let r of this.remote) {
+        const l = this.local.get(r.full_name)
+        if (l && !downed.has(r))
+          already_up.add(l)
+      }
       const up = MutationRunner.up_runner(already_up)
       for (var mut of local_to_up) {
         await mut.up(up)
         // Immediately try to down the up statement
-
-        await query(`insert into ${tbl}(name, source)
-        values ($(full_name), $(source))`,
-        mut
-        )
       }
 
-      await this.test()
+      await this.test(local_to_up)
     // Once we're done, we might want to commit...
-      await query('rollback')
-      // await query('commit')
+      // await query('rollback')
+      await query('commit')
     } catch (e) {
       await query('rollback')
+      console.error(e.message)
     }
   }
 
