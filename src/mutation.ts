@@ -126,17 +126,18 @@ export class Mutation {
   /**
    * Runs this mutation and its children
    */
-  async up(fn: (m: Mutation) => any, visited = new Set<Mutation>()) {
+  async up(fn: (m: Mutation) => any, visited = new Set<Mutation>(), do_children = true) {
     if (visited.has(this)) return
     visited.add(this)
 
     for (var parent of this.parents)
-      await parent.up(fn, visited)
+      await parent.up(fn, visited, false)
 
     await fn(this)
 
-    for (var chld of this.children)
-      await chld.up(fn, visited)
+    if (do_children)
+      for (var chld of this.children)
+        await chld.up(fn, visited)
   }
 
   /**
@@ -164,7 +165,7 @@ export class Mutation {
       descriptors = [...descriptors, ...match[1].split(',').map(r => r.trim())]
     }
 
-    const re_req = /(?:([^:]+):)?([^\.]+)(?:\.(\d+))?/
+    const re_req = /^(?:([^:]+):)?([^\.]+)(?:\.(\d+))?$/
 
     for (var desc of descriptors) {
 
@@ -179,7 +180,8 @@ export class Mutation {
       const serie: number | null = match[3] !== undefined ? parseInt(match[3]) : null
 
       // Rebuild the requirement regexp
-      const re_desc = new RegExp(`${module}:${name}${serie ? '\\.' + serie : ''}`)
+      const re_desc = new RegExp(`^${module}:${name}(?:\\/[^\\.]+?)?${serie ? '\\.' + serie : '(?:\\.\\d+)?'}$`)
+      // console.log(re_desc.source)
       let found = false
 
       for (var m of mutations) {
@@ -205,9 +207,61 @@ export class Mutation {
 }
 
 
+export class MutationSet extends Set<Mutation> {
+
+  private dct: {[name: string]: Mutation} = {}
+
+  constructor(mutations: Mutation[]) {
+    super()
+    for (var m of mutations) {
+      this.add(m)
+    }
+  }
+
+  add(mut: Mutation) {
+    const r = super.add(mut)
+    this.dct[mut.full_name] = mut
+    return r
+  }
+
+  get(name: string): Mutation | undefined {
+    return this.dct[name]
+  }
+
+  /**
+   * Get our own mutations that have changed in the remote
+   * set. Used to find out which are the mutations we will have
+   * to down.
+   *
+   * @param set The other set
+   */
+  diff(set: MutationSet) {
+    const res = new Set<Mutation>()
+    for (var m of this) {
+      var s = set.get(m.full_name)
+      if (!s || m.hash !== s.hash)
+        res.add(m)
+    }
+    return res
+  }
+
+  intersect(set: MutationSet) {
+    const res = new Set<Mutation>()
+    for (var m of this) {
+      var s = set.get(m.full_name)
+      if (s && m.hash !== s.hash)
+        res.add(m)
+    }
+    return res
+  }
+
+}
+
+
+
 import {getInfos, getScripts} from './utils'
 import {dirname} from 'path'
-export async function fetchLocalMutations(path?: string): Promise<Mutation[]> {
+async function fetchLocal(path?: string): Promise<Mutation[]> {
   path = path || process.cwd()
   const infos = await getInfos(path)
   const name = infos.name
@@ -229,4 +283,12 @@ export async function fetchLocalMutations(path?: string): Promise<Mutation[]> {
   }
 
   return mutations
+}
+
+
+export async function fetchLocalMutations(path?: string): Promise<MutationSet> {
+  const mutations = await fetchLocal(path)
+  for (var m of mutations)
+    m.computeRequirement(mutations)
+  return new MutationSet(mutations)
 }

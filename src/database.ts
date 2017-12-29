@@ -1,7 +1,8 @@
 
 import * as pgp from 'pg-promise'
-import {Mutation} from './mutation'
-import ch from 'chalk'
+import {Mutation, MutationSet} from './mutation'
+import chalk from 'chalk'
+const ch = chalk.constructor({level: 3})
 
 const database = pgp()
 
@@ -21,8 +22,8 @@ export async function query(stmt: string, args?: any): Promise<any> {
     }
     return await db.any(stmt, args)
   } catch (e) {
-    console.log(`  !!${ch.redBright(stmt)}`)
-    console.log(e.message)
+    console.log(`  ${ch.redBright(e.message)}`)
+    console.log(`${ch.grey.bold('On statement:')}\n  ${ch.grey(stmt)}`)
     throw e
   }
 }
@@ -69,7 +70,11 @@ export async function bootstrap() {
   return await db.query(create_sql)
 }
 
-export async function fetchRemoteMutations(): Promise<Mutation[]> {
+
+/**
+ * Fetch mutations that were already in the database
+ */
+export async function fetchRemoteMutations(): Promise<MutationSet> {
   const res = await db.query(`select * from ${tbl}`) as any[]
 
   const muts = res.map(dbval => {
@@ -80,101 +85,89 @@ export async function fetchRemoteMutations(): Promise<Mutation[]> {
   for (var m of muts)
     m.computeRequirement(muts)
 
-  return muts
+  return new MutationSet(muts)
 }
 
 
 export class MutationRunner {
 
-  static down_runner() {
-    return Mutation.once(async function (mut) {
+  static down_runner(set = new Set<Mutation>()) {
+    return async function (mut: Mutation) {
+      if (set.has(mut))
+        return
+      set.add(mut)
+
+      console.log(ch.grey(`  « ${mut.full_name}`))
       for (var stmt of mut.down_statements)
         await query(stmt)
-    })
+    }
   }
 
-  static up_runner() {
-    return Mutation.once(async function (mut) {
+  static up_runner(set = new Set<Mutation>()) {
+    return async function (mut: Mutation) {
+      if (set.has(mut)) return
+      set.add(mut)
+
+      console.log(ch.greenBright(`  » ${mut.full_name}`))
       for (var stmt of mut.up_statements)
         await query(stmt)
-    })
+    }
   }
 
   to_down = new Set<Mutation>()
   to_up = new Set<Mutation>()
 
   constructor(
-    local: Mutation[],
-    remote: Mutation[]
+    public local: MutationSet,
+    public remote: MutationSet
   ) {
-    // first, compute the list of migrations that will have to be downed
-    // console.log(remote.mutations)
-    for (var lo of local) {
-      const rm = remote.get(lo.full_name)
-      if (!rm) {
-        lo.tagUp()
-        // Tag this one as an up.
-      } else if (rm.hash !== lo.hash) {
-        rm.tagDown() // On va downer rm avant de réuper
-        lo.tagUp()
-      }
-    }
-  }
 
-  async run(stmts: string[]) {
-    for (var s of stmts)
-      await query(s)
-  }
-
-  async up(m: Mutation) {
-    await this.run(m.up_statements)
-  }
-
-  async down(m: Mutation) {
-    await this.run(m.down_statements)
   }
 
   /**
    *
    * @param mutations
    */
-  async test(mutations: Set<Mutation>) {
-    for (var m of mutations) {
+  async test() {
+    console.log(`\n--- now testing mutations---\n`)
+    var errored = false
+    for (var m of this.local) {
       try {
-        await query('savepoint "dmut-testing"')
 
         // We do not try testing on pure leaves.
         if (m.parents.size > 0 && m.children.size === 0)
           continue
 
-        await m.up(MutationRunner.up_runner())
+        console.log(ch.blueBright.bold(` *** trying to down/up ${m.full_name}`))
+        await query('savepoint "dmut-testing"')
+
         await m.down(MutationRunner.down_runner())
         await m.up(MutationRunner.up_runner())
 
+      } catch(e) {
+        errored = true
       } finally {
-        await query('restore savepoint "dmut-testing"')
+        await query('rollback to savepoint "dmut-testing"')
       }
     }
+    if (errored) throw new Error(`Mutations had errors, bailing.`)
   }
 
   async mutate() {
     await query('begin')
+    const remote_to_down = this.remote.diff(this.local)
+    const local_to_up = this.local.diff(this.remote)
 
     try {
-      for (var mut of Array.from(this.remote.mutations).reverse()) {
-        if (!mut.tagged_down) continue
-        console.log(`« ${mut.full_name}`)
-        await this.down(mut)
+      const down = MutationRunner.down_runner(remote_to_down)
+      for (var mut of remote_to_down) {
+        await mut.down(down)
       }
 
-      const to_up = Array.from(this.local.mutations).filter(m => m.tagged_up)
-      for (var mut of to_up) {
-        if (!mut.tagged_up) continue
-
-        console.log(`» ${mut.full_name}`)
-        // continue
-
-        await this.up(mut)
+      const already_up = this.local.intersect(this.remote)
+      const up = MutationRunner.up_runner(already_up)
+      for (var mut of local_to_up) {
+        await mut.up(up)
         // Immediately try to down the up statement
 
         await query(`insert into ${tbl}(name, source)
@@ -183,37 +176,10 @@ export class MutationRunner {
         )
       }
 
-      var try_to_down = [] as Mutation[]
-      for (var u of to_up) {
-        for (var d of u.descendants) {
-          if (try_to_down.indexOf(d) === -1) try_to_down.push(d)
-        }
-      }
-      try_to_down.reverse()
-
-      const runs = [] as string[]
-      try {
-        // console.log("  trying to down")
-        await query(`savepoint "undoing and redoing"`)
-        for (var m of try_to_down) {
-          runs.push(`« ${m.full_name}`)
-          await this.down(m)
-        }
-        for (var m of to_up) {
-          runs.push(`» ${m.full_name}`)
-          await this.up(m)
-        }
-      } catch(e) {
-        console.log(ch.redBright(`  !! error was on test re-run`))
-        console.log(ch.gray(`  this would indicate that your down mutation do not really undo or that you are missing some key dependencies in your mutations.`))
-        console.log(ch.gray(runs.join('\n')))
-        throw e
-      } finally {
-        await query(`rollback to savepoint "undoing and redoing"`)
-      }
-
+      await this.test()
     // Once we're done, we might want to commit...
-      await query('commit')
+      await query('rollback')
+      // await query('commit')
     } catch (e) {
       await query('rollback')
     }
