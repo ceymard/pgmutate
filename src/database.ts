@@ -141,8 +141,8 @@ export class MutationRunner {
     var errored = false
     for (var m of mutations) {
       // We do not try testing on pure leaves.
-      if (m.parents.size > 0 && m.children.size === 0)
-        continue
+      // if (m.parents.size > 0 && m.children.size === 0)
+        // continue
 
       try {
         // Whenever we get to this point, we can consider that all local mutations
