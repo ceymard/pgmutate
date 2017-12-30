@@ -100,6 +100,11 @@ export class MutationRunner {
       console.log(ch.grey(`  « ${mut.full_name}`))
       for (var stmt of mut.down_statements)
         await query(stmt)
+
+      await query(`delete from ${tbl} where name = $(full_name)`,
+        mut
+      )
+
     }
   }
 
@@ -178,7 +183,7 @@ export class MutationRunner {
           !l // the corresponding local migration is gone
           || l.hash !== r.hash // the hash changed
         ) {
-          if (r.serie)
+          if (r.serie && !process.env.FORCE)
             throw new Error(`Series mutations can not change, please write a new one instead. (${r.full_name})`)
           remote_to_down.add(r)
         }
@@ -193,6 +198,7 @@ export class MutationRunner {
       }
 
       const local_to_up = new MutationSet()
+      // console.log(Array.from(this.local).map(l => l.full_name))
       for (var l of this.local) {
         const r = this.remote.get(l.full_name)
         // Schedule a mutation to be run if
