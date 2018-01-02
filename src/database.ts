@@ -97,7 +97,7 @@ export class MutationRunner {
         return
       set.add(mut)
 
-      console.log(ch.grey(`  « ${mut.full_name}`))
+      console.log(ch.grey(`  << ${mut.full_name}`))
       for (var stmt of mut.down_statements)
         await query(stmt)
 
@@ -113,7 +113,7 @@ export class MutationRunner {
       if (set.has(mut)) return
       set.add(mut)
 
-      console.log(ch.greenBright(`  » ${mut.full_name}`))
+      console.log(ch.greenBright(`  >> ${mut.full_name}`))
       for (var stmt of mut.up_statements)
         await query(stmt)
 
