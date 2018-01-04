@@ -1,11 +1,11 @@
 {
-  "name": "pgmutate",
-  "version": "0.2.0",
-  "repository": "https://github.com/ceymard/pgmutate",
+  "name": "dmut",
+  "version": "0.2.1",
+  "repository": "https://github.com/ceymard/dmut",
   "description": "A migration utility for PostgreSQL designed for schema and code changes inside your database.",
   "license": "MIT",
   "bin": {
-    "pgmutate": "./lib/cli.js"
+    "dmut": "./lib/cli.js"
   },
   "dependencies": {
     "chalk": "^2.3.0",
