@@ -225,7 +225,7 @@ export class MutationRunner {
         // Immediately try to down the up statement
       }
 
-      await this.test(local_to_up)
+      await this.test(this.local)
     // Once we're done, we might want to commit...
       // await query('rollback')
       await query('commit')
